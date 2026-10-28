@@ -1,5 +1,5 @@
 // Service worker: funcționează offline; ia versiunea nouă când ai semnal.
-const CACHE = 'busteni-v3';
+const CACHE = 'busteni-v4';
 const FILES = ['./', 'index.html', 'style.css', 'app.js', 'detector.js', 'model.json', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png'];
 
 self.addEventListener('install', (e) => {
