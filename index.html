@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="ro">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#14181a">
+<title>Numără Bușteni</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- Ecran de start -->
+<main id="home" class="screen">
+  <header class="brand">
+    <img src="icon-192.png" alt="" width="56" height="56">
+    <div>
+      <h1>Numără Bușteni</h1>
+      <p>Fă o poză și atinge fiecare buștean.</p>
+    </div>
+  </header>
+
+  <div class="actions">
+    <label class="big primary">
+      <span>📷 Fă poză</span>
+      <input id="inCam" type="file" accept="image/*" capture="environment" hidden>
+    </label>
+    <label class="big">
+      <span>🖼️ Alege din galerie</span>
+      <input id="inGal" type="file" accept="image/*" hidden>
+    </label>
+  </div>
+
+  <section class="history">
+    <h2>Istoric</h2>
+    <ul id="histList"></ul>
+    <p id="histEmpty" class="muted">Nu ai nicio numărătoare salvată încă.</p>
+  </section>
+
+  <p class="muted tiny">Sfat: fă poza cât mai de aproape, din fața capetelor, cu lumină bună.</p>
+</main>
+
+<!-- Ecran de numărare -->
+<main id="work" class="screen hidden">
+  <div class="topbar">
+    <button id="btnBack" class="ghost" aria-label="Înapoi">←</button>
+    <div class="count"><span id="countNum">0</span><small>bușteni</small></div>
+    <button id="btnFit" class="ghost" aria-label="Potrivește în ecran">⤢</button>
+  </div>
+
+  <div id="stage">
+    <canvas id="cv"></canvas>
+    <div id="hint" class="hint">Atinge fiecare buștean. Atinge un marcaj ca să-l ștergi. Două degete = zoom.</div>
+  </div>
+
+  <div class="bottombar">
+    <button id="btnUndo">↶ Anulează</button>
+    <button id="btnClear" class="danger">Șterge tot</button>
+    <button id="btnSave" class="primary">Salvează</button>
+  </div>
+</main>
+
+<div id="toast" class="toast hidden"></div>
+
+<script src="app.js"></script>
+</body>
+</html>
