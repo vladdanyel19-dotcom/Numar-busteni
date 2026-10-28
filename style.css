@@ -51,3 +51,11 @@ button:active{transform:scale(.97)}
 button:disabled{opacity:.4}
 .toast{position:fixed;left:50%;bottom:96px;transform:translateX(-50%);background:#000c;color:#fff;
   padding:10px 16px;border-radius:12px;font-size:15px;max-width:90vw;text-align:center;z-index:9}
+
+.bottombar .auto{grid-column:1/-1;background:#0f2a1b;border-color:var(--accent);color:var(--accent);font-size:17px}
+.bottombar .auto.on{background:var(--accent);color:var(--accent-ink)}
+.hint.strong{background:var(--accent);color:var(--accent-ink);font-weight:600;font-size:15px}
+.busy{position:absolute;inset:0;background:rgba(0,0,0,.6);display:flex;flex-direction:column;align-items:center;
+  justify-content:center;gap:14px;font-size:18px;font-weight:600}
+.spin{width:44px;height:44px;border-radius:50%;border:5px solid #fff3;border-top-color:var(--accent);animation:sp 1s linear infinite}
+@keyframes sp{to{transform:rotate(360deg)}}

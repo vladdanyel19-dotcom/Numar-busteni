@@ -53,9 +53,11 @@
   <div id="stage">
     <canvas id="cv"></canvas>
     <div id="hint" class="hint">Atinge fiecare buștean. Atinge un marcaj ca să-l ștergi. Două degete = zoom.</div>
+    <div id="busy" class="busy hidden"><div class="spin"></div><div id="busyTxt"></div></div>
   </div>
 
   <div class="bottombar">
+    <button id="btnAuto" class="auto">✨ Auto-detectare</button>
     <button id="btnUndo">↶ Anulează</button>
     <button id="btnClear" class="danger">Șterge tot</button>
     <button id="btnSave" class="primary">Salvează</button>
@@ -64,6 +66,7 @@
 
 <div id="toast" class="toast hidden"></div>
 
+<script src="detector.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

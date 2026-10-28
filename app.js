@@ -7,6 +7,7 @@ const $ = (s) => document.querySelector(s);
 const MAX_SIDE = 2400;
 const TAP_RADIUS = 20;   // px pe ecran: cât de aproape de un marcaj ștergi în loc să adaugi
 const MARK_R = 8;        // raza marcajului, px pe ecran
+const AUTO_THR = 0.93;   // cât de sigur trebuie să fie modelul ca să marcheze un buștean
 
 /* ---------- IndexedDB (istoric) ---------- */
 function openDB() {
@@ -32,7 +33,10 @@ const dbDel = (id) => dbDo('readwrite', (s) => s.delete(id));
 const dbGet = (id) => dbDo('readonly', (s) => s.get(id));
 
 /* ---------- Stare ---------- */
-let cur = null;   // { id, img(canvas|bitmap), blob, marks:[{x,y}], undo:[], dirty }
+let cur = null;   // { id, img(canvas|bitmap), blob, marks:[{x,y,a?}], rejected:[{x,y}], undo:[], dirty, work }
+let mode = null;  // null | 'pickSize' (utilizatorul alege un buștean mijlociu pentru Auto)
+let busy = false;
+let model = null;
 const view = { s: 1, tx: 0, ty: 0 };
 const cv = $('#cv');
 const ctx = cv.getContext('2d');
@@ -81,8 +85,10 @@ async function loadFile(file) {
     img: c,
     blob: await canvasToBlob(c),
     marks: [],
+    rejected: [],
     undo: [],
     dirty: false,
+    work: null,
   };
   openWork();
 }
@@ -90,10 +96,12 @@ async function openSaved(id) {
   const rec = await dbGet(id);
   if (!rec) return;
   const bmp = await createImageBitmap(rec.blob);
-  cur = { id: rec.id, img: bmp, blob: rec.blob, marks: rec.marks.slice(), undo: [], dirty: false };
+  cur = { id: rec.id, img: bmp, blob: rec.blob, marks: rec.marks.map((m) => ({ ...m })), rejected: (rec.rejected || []).slice(), undo: [], dirty: false, work: null };
   openWork();
 }
 function openWork() {
+  mode = null;
+  setHint('Atinge fiecare buștean. Atinge un marcaj ca să-l ștergi. Două degete = zoom.', false);
   $('#hint').classList.remove('off');
   updateCount();
   show('work');
@@ -148,13 +156,13 @@ function paint() {
     if (p.x < -20 || p.y < -20 || p.x > W + 20 || p.y > H + 20) return;
     ctx.beginPath();
     ctx.arc(p.x, p.y, MARK_R, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(61,220,132,.4)';
+    ctx.fillStyle = m.a ? 'rgba(61,220,132,.4)' : 'rgba(255,176,32,.5)';
     ctx.fill();
     ctx.lineWidth = 2.5;
     ctx.strokeStyle = '#06210f';
     ctx.stroke();
     ctx.lineWidth = 1.5;
-    ctx.strokeStyle = '#3ddc84';
+    ctx.strokeStyle = m.a ? '#3ddc84' : '#ffb020';
     ctx.stroke();
     if (showNums && view.s > 0.35) {
       ctx.lineWidth = 3;
@@ -168,7 +176,8 @@ function paint() {
 
 /* ---------- Marcaje ---------- */
 function tapAt(px, py) {
-  if (!cur) return;
+  if (!cur || busy) return;
+  if (mode === 'pickSize') { runAuto(px, py); return; }
   // marcaj apropiat? => șterge
   let best = -1, bd = TAP_RADIUS;
   cur.marks.forEach((m, i) => {
@@ -178,7 +187,8 @@ function tapAt(px, py) {
   });
   if (best >= 0) {
     const [mk] = cur.marks.splice(best, 1);
-    cur.undo.push({ t: 'del', i: best, m: mk });
+    if (mk.a) cur.rejected.push({ x: mk.x, y: mk.y });   // detecție greșită: bună ca exemplu negativ la antrenare
+    cur.undo.push({ t: 'del', i: best, m: mk, rej: !!mk.a });
   } else {
     const q = toImg(px, py);
     if (q.x < 0 || q.y < 0 || q.x > cur.img.width || q.y > cur.img.height) return;
@@ -195,8 +205,9 @@ function undo() {
   if (!cur || !cur.undo.length) return;
   const a = cur.undo.pop();
   if (a.t === 'add') cur.marks.pop();
+  else if (a.t === 'batch') cur.marks.splice(cur.marks.length - a.n, a.n);
   else if (a.t === 'all') cur.marks = a.marks;
-  else cur.marks.splice(a.i, 0, a.m);
+  else { cur.marks.splice(a.i, 0, a.m); if (a.rej) cur.rejected.pop(); }
   cur.dirty = true;
   updateCount();
   draw();
@@ -281,6 +292,7 @@ async function save() {
     date: Date.now(),
     count: cur.marks.length,
     marks: cur.marks,
+    rejected: cur.rejected,
     blob: cur.blob,
     w: cur.img.width, h: cur.img.height,
     thumb: await thumbOf(cur.img),
@@ -292,7 +304,8 @@ function annotationJSON(rec) {
   return JSON.stringify({
     id: rec.id, date: new Date(rec.date).toISOString(),
     width: rec.w, height: rec.h, count: rec.count,
-    points: rec.marks, // centrul fiecărui buștean, în pixeli ai pozei
+    points: rec.marks, // centrul fiecărui buștean, în pixeli ai pozei; a:1 = găsit automat și păstrat
+    rejected: rec.rejected || [], // detecții automate pe care le-ai șters (nu sunt bușteni)
   }, null, 1);
 }
 async function share(id) {
@@ -343,7 +356,89 @@ async function renderHistory() {
   }
 }
 
+/* ---------- Auto-detectare ---------- */
+function setHint(text, persist) {
+  const h = $('#hint');
+  h.textContent = text;
+  h.classList.toggle('strong', !!persist);
+  h.classList.remove('off');
+}
+function setBusy(text) {
+  busy = !!text;
+  const b = $('#busy');
+  b.classList.toggle('hidden', !text);
+  if (text) $('#busyTxt').textContent = text;
+}
+async function loadModel() {
+  if (model) return model;
+  const r = await fetch('model.json');
+  if (!r.ok) throw new Error('model');
+  model = await r.json();
+  return model;
+}
+function workImage() {
+  if (cur.work) return cur.work;
+  const k = Detector.LONG / Math.max(cur.img.width, cur.img.height);
+  const w = Math.round(cur.img.width * k), h = Math.round(cur.img.height * k);
+  const c = document.createElement('canvas');
+  c.width = w; c.height = h;
+  const cx = c.getContext('2d', { willReadFrequently: true });
+  cx.imageSmoothingQuality = 'high';
+  cx.drawImage(cur.img, 0, 0, w, h);
+  const S = Detector.integralsFromRGBA(cx.getImageData(0, 0, w, h).data, w, h);
+  cur.work = { S, k };
+  return cur.work;
+}
+function startAuto() {
+  if (!cur || busy) return;
+  if (mode === 'pickSize') {
+    mode = null;
+    setHint('Atinge fiecare buștean. Atinge un marcaj ca să-l ștergi. Două degete = zoom.', false);
+    return;
+  }
+  mode = 'pickSize';
+  $('#btnAuto').classList.add('on');
+  setHint('Atinge mijlocul unui capăt de buștean de mărime medie.', true);
+}
+async function runAuto(px, py) {
+  mode = null;
+  $('#btnAuto').classList.remove('on');
+  const q = toImg(px, py);
+  setBusy('Pregătesc…');
+  try {
+    await loadModel();
+    await new Promise((r) => setTimeout(r, 30));
+    const { S, k } = workImage();
+    const est = Detector.estimateRadius(model, S, q.x * k, q.y * k);
+    if (est.conf < 0.4) {
+      setBusy(null);
+      setHint('Nu recunosc un buștean acolo. Încearcă din nou, atingând exact mijlocul unui capăt.', false);
+      return;
+    }
+    const dets = await Detector.detect(model, S, est.r, AUTO_THR, null,
+      (f) => setBusy(`Caut bușteni… ${Math.round(f * 100)}%`));
+    // nu dubla marcajele existente sau pe cele pe care le-ai șters deja
+    const near = (list, x, y, r) => list.some((m) => Math.hypot(m.x * k - x, m.y * k - y) < 0.8 * r);
+    const added = [];
+    for (const d of dets) {
+      const [, x, y, r] = d;
+      if (near(cur.marks, x, y, r) || near(cur.rejected, x, y, r)) continue;
+      added.push({ x: Math.round(x / k), y: Math.round(y / k), a: 1 });
+    }
+    cur.marks.push(...added);
+    if (added.length) cur.undo.push({ t: 'batch', n: added.length });
+    cur.dirty = true;
+    updateCount(); draw();
+    setHint(`Am găsit ${added.length} bușteni (verzi). Șterge ce e greșit, adaugă ce lipsește (portocaliu).`, false);
+  } catch (e) {
+    setHint('Auto-detectarea nu a mers. Poți număra manual.', false);
+  } finally {
+    setBusy(null);
+  }
+}
+
 /* ---------- Butoane ---------- */
+$('#btnAuto').addEventListener('click', startAuto);
 $('#inCam').addEventListener('change', (e) => { loadFile(e.target.files[0]); e.target.value = ''; });
 $('#inGal').addEventListener('change', (e) => { loadFile(e.target.files[0]); e.target.value = ''; });
 $('#btnUndo').addEventListener('click', undo);
@@ -359,6 +454,8 @@ $('#btnSave').addEventListener('click', async () => { await save(); });
 $('#btnBack').addEventListener('click', async () => {
   if (cur && cur.dirty && cur.marks.length && !confirm('Ieși fără să salvezi?')) return;
   cur = null;
+  mode = null;
+  $('#btnAuto').classList.remove('on');
   show('home');
   renderHistory();
 });
