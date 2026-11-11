@@ -328,6 +328,62 @@ async function share(id) {
   toast('Fișierele au fost descărcate.');
 }
 
+
+/* ---------- Export ZIP (toate pozele odată) ---------- */
+const CRC_T = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
+function crc32(u8) { let c = 0xFFFFFFFF; for (let i = 0; i < u8.length; i++) c = CRC_T[(c ^ u8[i]) & 255] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; }
+async function makeZip(files, onProg) { // files: [{name, data: Blob|string, date}] ; fără compresie (JPEG-urile oricum sunt comprimate)
+  const enc = new TextEncoder(), parts = [], central = []; let off = 0;
+  for (let i = 0; i < files.length; i++) {
+    const f = files[i], blob = f.data instanceof Blob ? f.data : new Blob([f.data]);
+    const u8 = new Uint8Array(await blob.arrayBuffer()), name = enc.encode(f.name), crc = crc32(u8), d = new Date(f.date);
+    const dt = ((d.getHours() << 11) | (d.getMinutes() << 5) | (d.getSeconds() >> 1)), dd = (((d.getFullYear() - 1980) << 9) | ((d.getMonth() + 1) << 5) | d.getDate());
+    const lh = new DataView(new ArrayBuffer(30));
+    lh.setUint32(0, 0x04034b50, true); lh.setUint16(4, 20, true); lh.setUint16(6, 0x0800, true); lh.setUint16(8, 0, true);
+    lh.setUint16(10, dt, true); lh.setUint16(12, dd, true); lh.setUint32(14, crc, true); lh.setUint32(18, u8.length, true); lh.setUint32(22, u8.length, true);
+    lh.setUint16(26, name.length, true); lh.setUint16(28, 0, true);
+    parts.push(lh.buffer, name, blob);
+    const ch = new DataView(new ArrayBuffer(46));
+    ch.setUint32(0, 0x02014b50, true); ch.setUint16(4, 20, true); ch.setUint16(6, 20, true); ch.setUint16(8, 0x0800, true); ch.setUint16(10, 0, true);
+    ch.setUint16(12, dt, true); ch.setUint16(14, dd, true); ch.setUint32(16, crc, true); ch.setUint32(20, u8.length, true); ch.setUint32(24, u8.length, true);
+    ch.setUint16(28, name.length, true); ch.setUint32(42, off, true);
+    central.push(ch.buffer, name);
+    off += 30 + name.length + u8.length;
+    if (onProg) onProg(i + 1, files.length);
+    if (i % 4 === 3) await new Promise((r) => setTimeout(r, 0));
+  }
+  let csize = 0; for (const c of central) csize += c.byteLength;
+  const end = new DataView(new ArrayBuffer(22));
+  end.setUint32(0, 0x06054b50, true); end.setUint16(8, files.length, true); end.setUint16(10, files.length, true);
+  end.setUint32(12, csize, true); end.setUint32(16, off, true);
+  return new Blob([...parts, ...central, end.buffer], { type: 'application/zip' });
+}
+async function exportZip(onlyNew) {
+  let list = await dbAll();
+  list.sort((a, b) => a.date - b.date);
+  if (onlyNew) list = list.filter((r) => !r.exp);
+  if (!list.length) { toast('Nu e nimic de exportat.'); return; }
+  const files = [];
+  for (const r of list) {
+    const base = 'busteni-' + new Date(r.date).toISOString().slice(0, 19).replace(/[:T]/g, '-');
+    files.push({ name: base + '.jpg', data: r.blob, date: r.date });
+    files.push({ name: base + '.json', data: annotationJSON(r), date: r.date });
+  }
+  const btns = [...document.querySelectorAll('.exportbtn')]; btns.forEach((b) => (b.disabled = true));
+  try {
+    const zip = await makeZip(files, (i, n) => { $('#btnExpAll').textContent = `Împachetez ${Math.ceil(i / 2)}/${n / 2}…`; });
+    const name = 'busteni-export-' + new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-') + '.zip';
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(zip); a.download = name; document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 60000);
+    const now = Date.now();
+    for (const r of list) { r.exp = now; await dbPut(r); }
+    toast(`Arhivă cu ${list.length} poze (${(zip.size / 1048576).toFixed(0)} MB) în Descărcări.`, 5000);
+    renderHistory();
+  } catch (e) { renderHistory(); toast('Eroare la export: ' + e.message, 5000); }
+  btns.forEach((b) => (b.disabled = false));
+}
+
 /* ---------- Istoric ---------- */
 async function renderHistory() {
   const list = await dbAll();
@@ -335,6 +391,11 @@ async function renderHistory() {
   const ul = $('#histList');
   ul.innerHTML = '';
   $('#histEmpty').classList.toggle('hidden', list.length > 0);
+  const nNew = list.filter((r) => !r.exp).length;
+  $('#expBar').classList.toggle('hidden', list.length === 0);
+  $('#btnExpNew').textContent = `📦 Exportă cele noi (${nNew})`;
+  $('#btnExpNew').disabled = nNew === 0;
+  $('#btnExpAll').textContent = `Exportă tot (${list.length})`;
   for (const r of list) {
     const li = document.createElement('li');
     const d = new Date(r.date);
@@ -465,3 +526,6 @@ renderHistory();
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('sw.js').catch(() => {});
 }
+
+$('#btnExpNew').addEventListener('click', () => exportZip(true));
+$('#btnExpAll').addEventListener('click', () => exportZip(false));

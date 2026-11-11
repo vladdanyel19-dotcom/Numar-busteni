@@ -59,3 +59,8 @@ button:disabled{opacity:.4}
   justify-content:center;gap:14px;font-size:18px;font-weight:600}
 .spin{width:44px;height:44px;border-radius:50%;border:5px solid #fff3;border-top-color:var(--accent);animation:sp 1s linear infinite}
 @keyframes sp{to{transform:rotate(360deg)}}
+
+.expbar{display:flex;gap:8px;margin:0 0 12px}
+.expbar button{flex:1;padding:12px 8px;border-radius:12px;border:1px solid var(--line);background:var(--accent,#3ddc84);color:#04210f;font-weight:700;font-size:15px}
+.expbar button.alt{background:var(--panel);color:var(--text,#eee)}
+.expbar button:disabled{opacity:.45}
