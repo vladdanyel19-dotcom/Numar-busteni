@@ -37,7 +37,7 @@ def patch_feat(I, cx, cy, h):
     """I = integrals; patch patrat centrat in (cx,cy), jumatate de latura h. None daca iese din imagine."""
     H_, W_ = I[0].shape[0] - 1, I[0].shape[1] - 1
     x0 = cx - h; y0 = cy - h; side = 2 * h
-    if x0 < 0 or y0 < 0 or x0 + side > W_ or y0 + side > H_ or h < 3: return None
+    if x0 < 0 or y0 < 0 or x0 + side > W_ - 1 or y0 + side > H_ - 1 or h < 3: return None
     g = grid_avg(I[0], x0, y0, side, 32)
     p = np.pad(g, 1, mode='edge')
     gx = p[1:-1, 2:] - p[1:-1, :-2]; gy = p[2:, 1:-1] - p[:-2, 1:-1]

@@ -57,7 +57,7 @@
   // trăsăturile unui pătrat cu centrul (cx,cy) și jumătate de latură h; false dacă iese din imagine
   function patchFeat(S, cx, cy, h, out) {
     const x0 = cx - h, y0 = cy - h, side = 2 * h;
-    if (x0 < 0 || y0 < 0 || x0 + side > S.w || y0 + side > S.h || h < 3) return false;
+    if (x0 < 0 || y0 < 0 || x0 + side > S.w - 1 || y0 + side > S.h - 1 || h < 3) return false;
     gridAvg(S.I[0], S.W1, x0, y0, side, 32, _g);
     // padding „edge” 1 pixel
     for (let y = 0; y < 34; y++) {
